@@ -1,0 +1,34 @@
+cabal-version:      3.0
+name:               payment-transaction-validator
+version:            0.1.0.0
+synopsis:           A CLI tool for validating and processing payment transactions.
+description:        Validates accounts, balances, currencies, duplicate transactions, and potential fraud in payment transactions.
+license:            MIT
+author:             Dodla Prasanna Kumar Reddy
+maintainer:         dodla.prasanna.kumar@gmail.com
+category:           Fintech
+build-type:         Simple
+
+common warnings
+    ghc-options: -Wall
+
+library
+    import:           warnings
+    exposed-modules:  Types
+                    , Validation
+                    , Fraud
+                    , Ledger
+                    , Parser
+    hs-source-dirs:   src
+    build-depends:    base >= 4.14 && < 5
+                    , containers
+    default-language: Haskell2010
+
+executable payment-transaction-validator
+    import:           warnings
+    main-is:          Main.hs
+    build-depends:    base >= 4.14 && < 5
+                    , containers
+                    , payment-transaction-validator
+    hs-source-dirs:   app
+    default-language: Haskell2010
