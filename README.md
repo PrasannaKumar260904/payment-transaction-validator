@@ -1,61 +1,59 @@
-# Payment Transaction Validator
+Payment Transaction Validator
 
-A high-performance command-line utility built in Haskell that validates and processes batch payment transactions against an account database. The application leverages pure functional programming patterns, algebraic data types (ADTs), and state transitions using folds to execute transaction validation and ledger updates without mutable state.
+A command-line utility built in Haskell that validates and processes batch payment transactions against an account ledger. The application applies pure functional programming patterns — algebraic data types (ADTs), monadic error handling, and fold-based state transitions — to process transactions without any mutable state.
 
-## Why This Was Built
-This project serves as a practical demonstration of applying pure functional programming principles to the fintech domain. In financial systems, consistency, safety, and auditability are paramount. Haskell's strong static type system, pure computation, and explicit error handling via the `Either` monad make it an exceptional tool for writing bug-free, idempotent transaction ledger processors.
+Why This Was Built
 
-## Tech Stack
-- **Language**: Haskell (GHC 9.14+)
-- **Build Tool**: Cabal 3.16+
-- **Standard Library Modules**: `containers` (for Map and Set structures), `base`, `Text.Printf`
+This project is a practical exploration of applying pure functional programming to the fintech domain. In financial systems, correctness, auditability, and predictable failure handling are non-negotiable. Haskell's strong static type system, pure computation model, and explicit error handling via the Either monad make it a natural fit for writing transaction processing logic where invalid states should be unrepresentable rather than merely avoided.
 
-## Assumptions Made
-1. **Idempotency Lifespan**: Transaction IDs are tracked across the entire batch. Once a transaction ID is seen (whether it succeeds or is rejected), any subsequent transaction with the same ID in the batch is marked as `DuplicateTransaction` to prevent replay attacks or duplicate processing.
-2. **Account Balances**: Account balances are modified in-place inside the pure ledger map. If an account is not found, the transaction fails with `InvalidAccount`.
-3. **Transaction Currencies**: A transaction currency (USD, EUR, INR) must match the currencies of *both* the sender and receiver accounts. A currency mismatch triggers a `CurrencyMismatch` error.
-4. **Order of Validations**: Idempotency is checked first, followed by account existence, currency matching, sender balance, and finally the configurable fraud threshold.
+Key Design Decisions
+Illegal states are unrepresentable — every failure mode (InsufficientBalance, CurrencyMismatch, DuplicateTransaction, InvalidAccount, FraudFlagged) is enumerated as a constructor in the TxError ADT. The compiler forces every case to be handled; there's no way to "forget" an error type.
+No exceptions — all validation failures flow through Either TxError Transaction, so every function's signature honestly describes whether it can fail, and every caller must explicitly handle both outcomes.
+No mutable state — the entire ledger is rebuilt on each run via a pure foldl over the transaction list. This makes the system trivially testable: given the same accounts and transactions, the output is always identical.
+Idempotency by construction — transaction IDs are tracked in a Set across the batch. A duplicate ID is rejected deterministically, regardless of whether the original transaction succeeded or failed.
+Tech Stack
+Language: Haskell (GHC 9.14+)
+Build Tool: Cabal 3.16+
+Libraries: base, containers (Map/Set), Text.Printf
+No external CSV library — parsing is hand-written to keep the build fast and dependency-free.
+Project Structure
+payment-transaction-validator/
+├── payment-transaction-validator.cabal
+├── cabal.project
+├── data/
+│   ├── accounts.csv
+│   └── transactions.csv
+├── src/
+│   ├── Types.hs        -- Core domain models: Transaction, Account, Currency, TxError
+│   ├── Validation.hs   -- Business rule checks (idempotency, account existence, currency, balance)
+│   ├── Fraud.hs        -- Configurable currency-specific fraud thresholds
+│   ├── Ledger.hs       -- Fold-based batch ledger state transitions
+│   └── Parser.hs       -- Hand-written, dependency-free CSV parser
+└── app/
+    └── Main.hs          -- CLI entry point: orchestrates I/O, validation, and report output
+Assumptions Made
+Idempotency scope: transaction IDs are tracked across the entire batch. Once an ID has been seen — whether the transaction succeeded or was rejected — any later transaction with the same ID is flagged as DuplicateTransaction.
+Account resolution: if either the sender or receiver account is missing from the ledger, the transaction fails with InvalidAccount.
+Currency matching: a transaction's currency must match both the sender's and receiver's account currency; otherwise it fails with CurrencyMismatch.
+Validation order: idempotency → account existence → currency match → sender balance → fraud threshold. Validation short-circuits on the first failure.
+Fraud thresholds are currency-specific: USD $10,000 · EUR €9,000 · INR ₹800,000.
+Setup & Running
+Prerequisites
 
-## Project Structure
-- `src/Types.hs`: Core models (`Transaction`, `Account`, `Currency`, `TxError` ADTs).
-- `src/Validation.hs`: Business validation checks (idempotency, account check, currency match, balance).
-- `src/Fraud.hs`: Configurable currency-specific transaction limit safety check.
-- `src/Ledger.hs`: Fold-based batch ledger updates and chronological state tracking.
-- `src/Parser.hs`: Hand-crafted CSV parser avoiding external dependencies for speed and compiling reliability.
-- `app/Main.hs`: Orchestrator driving file I/O, validations, and tabular console reports.
+Install the Haskell toolchain via GHCup, or on macOS with Homebrew:
 
----
-
-## Setup & Running Instructions
-
-### Prerequisites
-Make sure you have [GHCup](https://www.haskell.org/ghcup/) installed to manage Haskell tools.
-Alternatively, on macOS with Homebrew, you can install the toolchain using:
-```bash
+bash
 brew install ghc cabal-install
-```
-
-### Build the Project
-Initialize Cabal and compile:
-```bash
+Build
+bash
 cabal build
-```
-
-### Run the Application
-Execute the compiled binary:
-```bash
+Run
+bash
 cabal run payment-transaction-validator
-```
+Sample Data
 
----
+data/accounts.csv:
 
-## Sample Data & Output
-
-### Sample Input
-The project includes realistic test data in the `data/` directory.
-
-`data/accounts.csv`:
-```csv
 id,balance,currency
 ACC001,25000.00,USD
 ACC002,30000.00,EUR
@@ -63,15 +61,10 @@ ACC003,1500000.00,INR
 ACC004,1500.00,USD
 ACC005,0.00,EUR
 ACC006,250000.00,INR
-```
 
-`data/transactions.csv`:
-Contains 20 transactions representing valid transfers, duplicate attempts, insufficient balances, nonexistent accounts, currency mismatches, and fraud threshold violations.
+data/transactions.csv contains 20 transactions covering: valid transfers, insufficient balance, currency mismatch, duplicate transaction IDs, non-existent accounts, and fraud threshold violations — including one transaction ID (TX018) that appears twice, deliberately, to demonstrate idempotency: the first instance is processed successfully, and the second is rejected as a duplicate.
 
-### Console Report Output
-When run, the application prints a structured, aligned terminal report:
-
-```text
+Sample Output
 ==================================================
         PAYMENT TRANSACTION VALIDATOR CLI         
 ==================================================
@@ -118,10 +111,7 @@ ACC004       |         1950.00 | USD
 ACC005       |          700.00 | EUR     
 ACC006       |       290000.00 | INR     
 ==================================================
-```
-
----
-
-## Resume Bullet Point
-
-- **Engineered an end-to-end payment transaction validator CLI in Haskell**, processing large mock CSV batches using purely functional state transitions (`foldl`) over account models; structured domain error states with Algebraic Data Types (ADTs) and leveraged the `Either` monad to enforce robust validation rules (balance checks, currency alignment, and currency-specific fraud limits) while ensuring idempotency with a custom transaction tracking system.
+Possible Extensions
+Property-based testing with QuickCheck (e.g., verifying total ledger balance is conserved across all processed transactions)
+Wrapping the core logic in a lightweight HTTP API (e.g., with Scotty)
+Persisting the idempotency set across runs instead of scoping it to a single batch
